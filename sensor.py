@@ -10,30 +10,31 @@ from homeassistant.components.sensor import (
     SensorEntity,
     PLATFORM_SCHEMA
 )
-from homeassistant.const import UnitOfTemperature, CONF_NAME
-from homeassistant.core import HomeAssistant
+from homeassistant.const import (
+    CONF_NAME,
+    ATTR_UNIT_OF_MEASUREMENT,
+    UnitOfTemperature,
+    UnitOfTime,
+)
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
-from homeassistant.util import Throttle
+from homeassistant.helpers.event import async_track_state_change
 import homeassistant.helpers.config_validation as cv
-from homeassistant.components.ecobee import DOMAIN as ECOBEE_DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.setLevel(logging.DEBUG)
 
 DOMAIN = "ecobee_learning"
 
-MIN_TIME_BETWEEN_UPDATES = timedelta(minutes=5)
-
-CONF_THERMOSTAT_INDEX = "thermostat_index"
+CONF_CLIMATE_ENTITY = "climate_entity"
 CONF_DB_PATH = "db_path"
+
 DEFAULT_NAME = "Ecobee AC Runtime"
-DEFAULT_THERMOSTAT_INDEX = 0
 DEFAULT_DB_PATH = "ecobee_learning.db"
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-    vol.Optional(CONF_THERMOSTAT_INDEX, default=DEFAULT_THERMOSTAT_INDEX): cv.positive_int,
+    vol.Required(CONF_CLIMATE_ENTITY): cv.entity_id,
     vol.Optional(CONF_DB_PATH, default=DEFAULT_DB_PATH): cv.string,
 })
 
@@ -44,84 +45,65 @@ async def async_setup_platform(
     discovery_info: DiscoveryInfoType | None = None
 ) -> None:
     """Set up the Ecobee Learning sensors."""
-    _LOGGER.debug("Setting up Ecobee Learning platform")
     name = config.get(CONF_NAME)
-    thermostat_index = config.get(CONF_THERMOSTAT_INDEX)
+    climate_entity = config.get(CONF_CLIMATE_ENTITY)
     db_path = config.get(CONF_DB_PATH)
-    _LOGGER.debug(f"Configuration: name={name}, thermostat_index={thermostat_index}, db_path={db_path}")
 
-    data = EcobeeLearningData(hass, thermostat_index, db_path)
+    data = EcobeeLearningData(hass, climate_entity, db_path)
     await data.async_update()
 
     sensor = EcobeeRuntimeSensor(name, data)
-    _LOGGER.debug(f"Adding Ecobee Learning sensor: {sensor}")
     async_add_entities([sensor], True)
 
 class EcobeeLearningData:
-    """Get the latest data from Ecobee and manage historical data."""
+    """Manage Ecobee data and historical storage."""
 
-    def __init__(self, hass, thermostat_index, db_path):
+    def __init__(self, hass, climate_entity, db_path):
         """Initialize the data object."""
         self.hass = hass
-        self.thermostat_index = thermostat_index
-        self.data = None
+        self.climate_entity = climate_entity
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path)
         self.create_table()
-        _LOGGER.debug(f"EcobeeLearningData initialized with thermostat_index: {thermostat_index}, db_path: {db_path}")
+        self.data = {}
+        self.cooling_start_time = None
 
     def create_table(self):
         """Create the database table if it doesn't exist."""
         cursor = self.conn.cursor()
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS runtime_data
-        (timestamp TEXT, runtime REAL, temp_change REAL, outdoor_temp REAL)
+        (timestamp TEXT, runtime REAL, temp_change REAL, current_temp REAL)
         ''')
         self.conn.commit()
-        _LOGGER.debug("Database table created or already exists")
 
-    @Throttle(MIN_TIME_BETWEEN_UPDATES)
     async def async_update(self):
-        """Get the latest data from Ecobee."""
-        try:
-            _LOGGER.debug("Attempting to fetch Ecobee data")
-            ecobee = self.hass.data.get(ECOBEE_DOMAIN)
-            if not ecobee:
-                _LOGGER.error("Ecobee integration not found in Home Assistant data")
-                return
+        """Update data from Home Assistant climate entity."""
+        climate_state = self.hass.states.get(self.climate_entity)
 
-            _LOGGER.debug(f"Ecobee object: {ecobee}")
-            _LOGGER.debug(f"Ecobee object methods: {dir(ecobee)}")
+        if climate_state:
+            self.data['current_temp'] = climate_state.attributes.get('current_temperature')
+            self.data['target_temp'] = climate_state.attributes.get('temperature')
+            self.data['hvac_action'] = climate_state.attributes.get('hvac_action')
+            self.data['equipment_running'] = climate_state.attributes.get('equipment_running')
 
-            if hasattr(ecobee, 'get_thermostat'):
-                data = await self.hass.async_add_executor_job(ecobee.get_thermostat, self.thermostat_index)
-                _LOGGER.debug(f"Raw data from get_thermostat: {data}")
-            elif hasattr(ecobee, 'thermostats'):
-                data = ecobee.thermostats
-                _LOGGER.debug(f"Raw data from thermostats attribute: {data}")
-            else:
-                _LOGGER.error("Unable to find method to fetch thermostat data")
-                return
+            if 'compCool' in self.data['equipment_running'] and self.cooling_start_time is None:
+                self.cooling_start_time = datetime.now()
+            elif 'compCool' not in self.data['equipment_running'] and self.cooling_start_time is not None:
+                runtime = (datetime.now() - self.cooling_start_time).total_seconds() / 60
+                temp_change = self.data['target_temp'] - self.data['current_temp']
+                self.store_data(runtime, temp_change, self.data['current_temp'])
+                self.cooling_start_time = None
 
-            if data:
-                self.data = data[0] if isinstance(data, list) else data  # Assuming we want the first thermostat
-                _LOGGER.debug(f"Processed Ecobee data: {self.data}")
-            else:
-                _LOGGER.warning("No data returned from Ecobee")
-        except Exception as e:
-            _LOGGER.exception(f"Error fetching Ecobee data: {e}")
-            self.data = None
-
-    def store_data(self, runtime, temp_change, outdoor_temp):
+    def store_data(self, runtime, temp_change, current_temp):
         """Store the runtime data in the database."""
         try:
             cursor = self.conn.cursor()
             cursor.execute('''
-            INSERT INTO runtime_data (timestamp, runtime, temp_change, outdoor_temp)
+            INSERT INTO runtime_data (timestamp, runtime, temp_change, current_temp)
             VALUES (?, ?, ?, ?)
-            ''', (datetime.now().isoformat(), float(runtime), float(temp_change), float(outdoor_temp)))
+            ''', (datetime.now().isoformat(), float(runtime), float(temp_change), float(current_temp)))
             self.conn.commit()
-            _LOGGER.debug(f"Stored data: runtime={runtime}, temp_change={temp_change}, outdoor_temp={outdoor_temp}")
         except Exception as e:
             _LOGGER.error(f"Error storing data in database: {e}")
 
@@ -133,9 +115,7 @@ class EcobeeLearningData:
             SELECT * FROM runtime_data
             WHERE timestamp > datetime('now', '-7 days')
             ''')
-            data = cursor.fetchall()
-            _LOGGER.debug(f"Retrieved {len(data)} historical data points")
-            return data
+            return cursor.fetchall()
         except Exception as e:
             _LOGGER.error(f"Error retrieving historical data: {e}")
             return []
@@ -147,9 +127,7 @@ class EcobeeRuntimeSensor(SensorEntity):
         """Initialize the sensor."""
         self._name = name
         self._data = data
-        self._state = None
         self._attributes = {}
-        _LOGGER.debug(f"EcobeeRuntimeSensor initialized with name: {name}")
 
     @property
     def name(self):
@@ -159,7 +137,7 @@ class EcobeeRuntimeSensor(SensorEntity):
     @property
     def state(self):
         """Return the state of the sensor."""
-        return self._state
+        return "True" if self._attributes.get('alert', False) else "False"
 
     @property
     def extra_state_attributes(self):
@@ -169,73 +147,59 @@ class EcobeeRuntimeSensor(SensorEntity):
     @property
     def unit_of_measurement(self):
         """Return the unit of measurement."""
-        return "minutes"
+        return UnitOfTime.MINUTES
+
+    async def async_added_to_hass(self):
+        """Run when entity about to be added."""
+        await super().async_added_to_hass()
+        
+        @callback
+        def sensor_state_listener(entity, old_state, new_state):
+            """Handle sensor state changes."""
+            self.async_schedule_update_ha_state(True)
+
+        self.async_on_remove(
+            async_track_state_change(
+                self.hass, [self._data.climate_entity], sensor_state_listener
+            )
+        )
 
     async def async_update(self):
-        """Get the latest data from Ecobee and updates the state."""
-        _LOGGER.debug("Starting EcobeeRuntimeSensor update")
+        """Get the latest data and updates the state."""
         await self._data.async_update()
-        if self._data.data is None:
-            _LOGGER.error("Failed to fetch Ecobee data")
-            return
-
+        
         try:
-            _LOGGER.debug(f"Raw Ecobee data: {self._data.data}")
-            runtime = self._data.data.get('runtime', {})
-            weather = self._data.data.get('weather', {})
-            
-            _LOGGER.debug(f"Runtime data: {runtime}")
-            _LOGGER.debug(f"Weather data: {weather}")
+            if self._data.cooling_start_time and 'compCool' in self._data.data.get('equipment_running', ''):
+                runtime = (datetime.now() - self._data.cooling_start_time).total_seconds() / 60
+                current_runtime = round(runtime, 2)
+            else:
+                current_runtime = 0
 
-            current_temp = float(runtime.get('actualTemperature', 0)) / 10
-            target_temp = float(runtime.get('desiredHeat', 0)) / 10
-            actual_runtime = float(runtime.get('actualHeatCoolTime', 0))
-            outdoor_temp = float(weather.get('temperature', 0)) / 10
-
-            _LOGGER.debug(f"Processed temperatures - Current: {current_temp}, Target: {target_temp}, Outdoor: {outdoor_temp}")
-            _LOGGER.debug(f"Actual runtime: {actual_runtime}")
-
-            temp_change = target_temp - current_temp
-
-            # Store the new data point
-            self._data.store_data(actual_runtime, temp_change, outdoor_temp)
-
-            # Get historical data
             history = self._data.get_historical_data()
 
             if len(history) > 1:
-                # Simple prediction based on average
                 runtimes = [float(row[1]) for row in history]
-                temp_changes = [float(row[2]) for row in history]
-                outdoor_temps = [float(row[3]) for row in history]
-
                 avg_runtime = statistics.mean(runtimes)
-                avg_temp_change = statistics.mean(temp_changes)
-                avg_outdoor_temp = statistics.mean(outdoor_temps)
 
-                # Simple linear adjustment
-                expected_runtime = avg_runtime
-                if temp_change > avg_temp_change:
-                    expected_runtime *= (temp_change / avg_temp_change)
-                if outdoor_temp > avg_outdoor_temp:
-                    expected_runtime *= (outdoor_temp / avg_outdoor_temp)
+                self._attributes['current_runtime'] = current_runtime
+                self._attributes['average_runtime'] = round(avg_runtime, 2)
+                self._attributes['current_temp'] = self._data.data.get('current_temp')
+                self._attributes['target_temp'] = self._data.data.get('target_temp')
+                self._attributes['hvac_action'] = self._data.data.get('hvac_action')
+                self._attributes['equipment_running'] = self._data.data.get('equipment_running')
+                self._attributes['alert'] = current_runtime > avg_runtime * 1.5 if current_runtime > 0 else False
 
-                self._state = actual_runtime
-                self._attributes['expected_runtime'] = round(expected_runtime, 2)
-                self._attributes['temp_change'] = round(temp_change, 2)
-                self._attributes['outdoor_temp'] = round(outdoor_temp, 2)
-                self._attributes['alert'] = actual_runtime > expected_runtime * 1.5
-
-                _LOGGER.info(f"Actual runtime: {actual_runtime}, Expected runtime: {expected_runtime}")
                 if self._attributes['alert']:
-                    _LOGGER.warning(f"Anomalous runtime detected! Actual: {actual_runtime}, Expected: {expected_runtime}")
+                    _LOGGER.warning(f"Anomalous runtime detected! Current: {current_runtime}, Average: {avg_runtime}")
             else:
                 _LOGGER.warning("Not enough historical data to make predictions yet.")
-                self._state = actual_runtime
-                self._attributes['temp_change'] = round(temp_change, 2)
-                self._attributes['outdoor_temp'] = round(outdoor_temp, 2)
+                self._attributes['current_runtime'] = current_runtime
+                self._attributes['current_temp'] = self._data.data.get('current_temp')
+                self._attributes['target_temp'] = self._data.data.get('target_temp')
+                self._attributes['hvac_action'] = self._data.data.get('hvac_action')
+                self._attributes['equipment_running'] = self._data.data.get('equipment_running')
+                self._attributes['alert'] = False
 
         except Exception as e:
             _LOGGER.exception(f"Error updating Ecobee Learning sensor: {e}")
-            self._state = None
             self._attributes = {}
