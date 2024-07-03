@@ -1,0 +1,9 @@
+{
+  "domain": "ecobee_learning",
+  "name": "Ecobee Learning",
+  "documentation": "https://github.com/brandongraves08/ecobee_learning",
+  "dependencies": ["ecobee"],
+  "codeowners": ["@brandongraves08"],
+  "requirements": [],
+  "version": "0.1.0"
+}
