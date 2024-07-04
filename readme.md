@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Ecobee Learning Integration is a custom component for Home Assistant that provides advanced monitoring and analysis of your Ecobee thermostat's performance. This integration tracks AC runtime, learns from historical data, and alerts you to anomalous behavior, helping you optimize your HVAC system's efficiency and catch potential issues early.
+The Ecobee Learning Integration is a custom component for Home Assistant that provides advanced monitoring and analysis of your Ecobee thermostat's performance. This integration tracks AC runtime, learns from historical data, alerts you to anomalous behavior, and calculates the efficiency of temperature changes, helping you optimize your HVAC system's efficiency and catch potential issues early.
 
 ## Features
 
@@ -10,8 +10,10 @@ The Ecobee Learning Integration is a custom component for Home Assistant that pr
 - Stores historical data for analysis
 - Calculates average runtime
 - Detects anomalous behavior (when runtime exceeds 1.5 times the average)
+- Calculates the average time it takes to change temperature by one degree
 - Provides detailed attributes including current temperature, target temperature, HVAC action, and equipment status
 - Custom Lovelace dashboard for easy monitoring
+- Supports multiple Ecobee thermostats (e.g., upstairs and downstairs)
 
 ## Installation
 
@@ -29,16 +31,20 @@ Add the following to your `configuration.yaml`:
 ```yaml
 sensor:
   - platform: ecobee_learning
-    name: "Ecobee AC Runtime"
-    climate_entity: climate.your_ecobee_entity
-    db_path: "ecobee_learning.db"
+    name: "Ecobee AC Runtime Downstairs"
+    climate_entity: climate.downstairs
+    db_path: "ecobee_learning_downstairs.db"
+  - platform: ecobee_learning
+    name: "Ecobee AC Runtime Upstairs"
+    climate_entity: climate.upstairs
+    db_path: "ecobee_learning_upstairs.db"
 ```
 
-Replace `climate.your_ecobee_entity` with the entity ID of your Ecobee thermostat in Home Assistant.
+Replace `climate.downstairs` and `climate.upstairs` with the entity IDs of your Ecobee thermostats in Home Assistant.
 
 ## Usage
 
-After installation and configuration, the integration will create a new sensor entity in Home Assistant. This sensor provides the following attributes:
+After installation and configuration, the integration will create new sensor entities in Home Assistant. These sensors provide the following attributes:
 
 - `current_runtime`: Current cooling cycle runtime in minutes
 - `average_runtime`: Average runtime based on historical data
@@ -47,74 +53,19 @@ After installation and configuration, the integration will create a new sensor e
 - `hvac_action`: Current HVAC action (cooling, idle, etc.)
 - `equipment_running`: Current status of HVAC equipment
 - `alert`: Boolean indicating if current runtime is anomalous
+- `avg_time_per_degree`: Average time it takes to change the temperature by one degree
 
-The sensor's state will be "True" when an alert is triggered (runtime exceeds 1.5 times the average) and "False" otherwise.
+The sensor's state will be the current runtime when the system is cooling, and 0 when it's not.
 
 ## Dashboard
 
-To visualize the data from this integration, you can add the following to your Lovelace dashboard:
+To visualize the data from this integration, you can add the provided Lovelace dashboard configuration to your Home Assistant. The dashboard includes:
 
-```yaml
-title: Ecobee Learning Dashboard
-views:
-  - title: Ecobee Overview
-    cards:
-      - type: entities
-        title: Ecobee Runtime Status
-        entities:
-          - entity: sensor.ecobee_ac_runtime
-            name: AC Runtime
-          - entity: sensor.ecobee_ac_runtime
-            name: Average Runtime
-            attribute: average_runtime
-          - entity: sensor.ecobee_ac_runtime
-            name: Current Temperature
-            attribute: current_temp
-          - entity: sensor.ecobee_ac_runtime
-            name: Target Temperature
-            attribute: target_temp
-          - entity: sensor.ecobee_ac_runtime
-            name: HVAC Action
-            attribute: hvac_action
-          - entity: sensor.ecobee_ac_runtime
-            name: Equipment Running
-            attribute: equipment_running
-          - entity: sensor.ecobee_ac_runtime
-            name: Alert Status
-            attribute: alert
-
-      - type: history-graph
-        title: AC Runtime History
-        entities:
-          - entity: sensor.ecobee_ac_runtime
-        hours_to_show: 24
-        refresh_interval: 0
-
-      - type: statistics-graph
-        title: AC Runtime Statistics
-        entities:
-          - entity: sensor.ecobee_ac_runtime
-        stat_types:
-          - mean
-          - min
-          - max
-        period: day
-
-      - type: conditional
-        conditions:
-          - entity: sensor.ecobee_ac_runtime
-            state: "True"
-        card:
-          type: alarm-panel
-          name: AC Runtime Alert
-          entity: sensor.ecobee_ac_runtime
-
-      - type: markdown
-        content: >
-          This dashboard provides an overview of your Ecobee's performance based on the learning integration.
-          The 'AC Runtime' shows the current runtime, while 'Average Runtime' shows the historical average.
-          An alert is triggered when the current runtime significantly exceeds the average runtime.
-```
+- Runtime status for each thermostat
+- History graphs of AC runtime
+- Statistics graphs showing daily runtime patterns
+- Conditional cards that appear when anomalies are detected
+- Display of the average time it takes to change temperature by one degree
 
 ## Troubleshooting
 
@@ -122,6 +73,7 @@ views:
 - Check the Home Assistant logs for any error messages related to the Ecobee Learning integration.
 - Verify that the `climate_entity` in your configuration matches your Ecobee thermostat's entity ID in Home Assistant.
 - If you're not seeing any data, ensure that your AC has run for at least one cooling cycle.
+- The temperature change rate calculation requires multiple cooling cycles to provide accurate data. Give it some time to collect sufficient data.
 
 ## Contributing
 

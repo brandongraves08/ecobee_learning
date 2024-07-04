@@ -68,13 +68,18 @@ class EcobeeLearningData:
         self.create_table()
         self.data = {}
         self.cooling_start_time = None
+        self.cooling_start_temp = None
 
     def create_table(self):
-        """Create the database table if it doesn't exist."""
+        """Create the database tables if they don't exist."""
         cursor = self.conn.cursor()
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS runtime_data
         (timestamp TEXT, runtime REAL, temp_change REAL, current_temp REAL)
+        ''')
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS temp_change_rate
+        (timestamp TEXT, rate REAL)
         ''')
         self.conn.commit()
 
@@ -90,11 +95,13 @@ class EcobeeLearningData:
 
             if 'compCool' in self.data.get('equipment_running', '') and self.cooling_start_time is None:
                 self.cooling_start_time = datetime.now()
+                self.cooling_start_temp = self.data['current_temp']
             elif 'compCool' not in self.data.get('equipment_running', '') and self.cooling_start_time is not None:
                 runtime = (datetime.now() - self.cooling_start_time).total_seconds() / 60
-                temp_change = self.data['target_temp'] - self.data['current_temp']
+                temp_change = self.cooling_start_temp - self.data['current_temp']
                 self.store_data(runtime, temp_change, self.data['current_temp'])
                 self.cooling_start_time = None
+                self.cooling_start_temp = None
 
     def store_data(self, runtime, temp_change, current_temp):
         """Store the runtime data in the database."""
@@ -105,6 +112,15 @@ class EcobeeLearningData:
             VALUES (?, ?, ?, ?)
             ''', (datetime.now().isoformat(), float(runtime), float(temp_change), float(current_temp)))
             self.conn.commit()
+
+            # Calculate and store the rate of temperature change
+            if runtime > 0 and temp_change != 0:
+                rate = abs(runtime / temp_change)  # minutes per degree
+                cursor.execute('''
+                INSERT INTO temp_change_rate (timestamp, rate)
+                VALUES (?, ?)
+                ''', (datetime.now().isoformat(), rate))
+                self.conn.commit()
         except Exception as e:
             _LOGGER.error(f"Error storing data in database: {e}")
 
@@ -120,6 +136,20 @@ class EcobeeLearningData:
         except Exception as e:
             _LOGGER.error(f"Error retrieving historical data: {e}")
             return []
+
+    def get_avg_temp_change_rate(self):
+        """Retrieve the average temperature change rate from the database."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+            SELECT AVG(rate) FROM temp_change_rate
+            WHERE timestamp > datetime('now', '-7 days')
+            ''')
+            result = cursor.fetchone()
+            return result[0] if result and result[0] is not None else None
+        except Exception as e:
+            _LOGGER.error(f"Error retrieving average temperature change rate: {e}")
+            return None
 
 class EcobeeRuntimeSensor(SensorEntity):
     """Representation of an Ecobee Runtime sensor."""
@@ -203,6 +233,10 @@ class EcobeeRuntimeSensor(SensorEntity):
                 self._attributes['hvac_action'] = self._data.data.get('hvac_action')
                 self._attributes['equipment_running'] = self._data.data.get('equipment_running')
                 self._attributes['alert'] = current_runtime > avg_runtime * 1.5 if current_runtime > 0 else False
+
+                avg_temp_change_rate = self._data.get_avg_temp_change_rate()
+                if avg_temp_change_rate:
+                    self._attributes['avg_time_per_degree'] = round(avg_temp_change_rate, 2)
 
                 if self._attributes['alert']:
                     _LOGGER.warning(f"Anomalous runtime detected! Current: {current_runtime}, Average: {avg_runtime}")
