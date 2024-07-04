@@ -21,6 +21,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.helpers.event import async_track_state_change
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.entity import EntityCategory
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,9 +88,9 @@ class EcobeeLearningData:
             self.data['hvac_action'] = climate_state.attributes.get('hvac_action')
             self.data['equipment_running'] = climate_state.attributes.get('equipment_running')
 
-            if 'compCool' in self.data['equipment_running'] and self.cooling_start_time is None:
+            if 'compCool' in self.data.get('equipment_running', '') and self.cooling_start_time is None:
                 self.cooling_start_time = datetime.now()
-            elif 'compCool' not in self.data['equipment_running'] and self.cooling_start_time is not None:
+            elif 'compCool' not in self.data.get('equipment_running', '') and self.cooling_start_time is not None:
                 runtime = (datetime.now() - self.cooling_start_time).total_seconds() / 60
                 temp_change = self.data['target_temp'] - self.data['current_temp']
                 self.store_data(runtime, temp_change, self.data['current_temp'])
@@ -128,6 +129,20 @@ class EcobeeRuntimeSensor(SensorEntity):
         self._name = name
         self._data = data
         self._attributes = {}
+        self._attr_unique_id = f"ecobee_learning_{data.climate_entity}"
+        self._attr_device_class = "duration"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def device_info(self):
+        """Return device information about this entity."""
+        return {
+            "identifiers": {(DOMAIN, self._data.climate_entity)},
+            "name": self._name,
+            "manufacturer": "Ecobee",
+            "model": "Learning Sensor",
+            "via_device": (DOMAIN, self._data.climate_entity),
+        }
 
     @property
     def name(self):
@@ -137,7 +152,7 @@ class EcobeeRuntimeSensor(SensorEntity):
     @property
     def state(self):
         """Return the state of the sensor."""
-        return "True" if self._attributes.get('alert', False) else "False"
+        return self._attributes.get('current_runtime', 0)
 
     @property
     def extra_state_attributes(self):
