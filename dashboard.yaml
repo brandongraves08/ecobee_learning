@@ -1,0 +1,138 @@
+title: Ecobee Learning Dashboard
+views:
+  - title: Ecobee Overview
+    cards:
+      - type: vertical-stack
+        title: Downstairs
+        cards:
+          - type: entities
+            title: Downstairs Runtime Status
+            entities:
+              - entity: sensor.ecobee_ac_runtime_downstairs
+                name: AC Runtime
+              - entity: sensor.ecobee_ac_runtime_downstairs
+                name: Average Runtime
+                secondary_info: attribute
+                attribute: average_runtime
+              - entity: sensor.ecobee_ac_runtime_downstairs
+                name: Current Temperature
+                secondary_info: attribute
+                attribute: current_temp
+              - entity: sensor.ecobee_ac_runtime_downstairs
+                name: Target Temperature
+                secondary_info: attribute
+                attribute: target_temp
+              - entity: sensor.ecobee_ac_runtime_downstairs
+                name: HVAC Action
+                secondary_info: attribute
+                attribute: hvac_action
+              - entity: sensor.ecobee_ac_runtime_downstairs
+                name: Equipment Running
+                secondary_info: attribute
+                attribute: equipment_running
+              - entity: sensor.ecobee_ac_runtime_downstairs
+                name: Alert Status
+                secondary_info: attribute
+                attribute: alert
+              - entity: sensor.ecobee_ac_runtime_downstairs
+                name: Avg. Time per 1°F Change
+                secondary_info: attribute
+                attribute: avg_time_per_degree
+
+          - type: history-graph
+            title: Downstairs AC Runtime History
+            entities:
+              - entity: sensor.ecobee_ac_runtime_downstairs
+            hours_to_show: 24
+            refresh_interval: 0
+
+          - type: statistics-graph
+            title: Downstairs AC Runtime Statistics
+            entities:
+              - entity: sensor.ecobee_ac_runtime_downstairs
+            stat_types:
+              - mean
+              - min
+              - max
+            period: day
+
+          - type: conditional
+            conditions:
+              - entity: sensor.ecobee_ac_runtime_downstairs
+                attribute: alert
+                state: "True"
+            card:
+              type: alarm-panel
+              name: Downstairs AC Runtime Alert
+              entity: sensor.ecobee_ac_runtime_downstairs
+
+      - type: vertical-stack
+        title: Upstairs
+        cards:
+          - type: entities
+            title: Upstairs Runtime Status
+            entities:
+              - entity: sensor.ecobee_ac_runtime_upstairs
+                name: AC Runtime
+              - entity: sensor.ecobee_ac_runtime_upstairs
+                name: Average Runtime
+                secondary_info: attribute
+                attribute: average_runtime
+              - entity: sensor.ecobee_ac_runtime_upstairs
+                name: Current Temperature
+                secondary_info: attribute
+                attribute: current_temp
+              - entity: sensor.ecobee_ac_runtime_upstairs
+                name: Target Temperature
+                secondary_info: attribute
+                attribute: target_temp
+              - entity: sensor.ecobee_ac_runtime_upstairs
+                name: HVAC Action
+                secondary_info: attribute
+                attribute: hvac_action
+              - entity: sensor.ecobee_ac_runtime_upstairs
+                name: Equipment Running
+                secondary_info: attribute
+                attribute: equipment_running
+              - entity: sensor.ecobee_ac_runtime_upstairs
+                name: Alert Status
+                secondary_info: attribute
+                attribute: alert
+              - entity: sensor.ecobee_ac_runtime_upstairs
+                name: Avg. Time per 1°F Change
+                secondary_info: attribute
+                attribute: avg_time_per_degree
+
+          - type: history-graph
+            title: Upstairs AC Runtime History
+            entities:
+              - entity: sensor.ecobee_ac_runtime_upstairs
+            hours_to_show: 24
+            refresh_interval: 0
+
+          - type: statistics-graph
+            title: Upstairs AC Runtime Statistics
+            entities:
+              - entity: sensor.ecobee_ac_runtime_upstairs
+            stat_types:
+              - mean
+              - min
+              - max
+            period: day
+
+          - type: conditional
+            conditions:
+              - entity: sensor.ecobee_ac_runtime_upstairs
+                attribute: alert
+                state: "True"
+            card:
+              type: alarm-panel
+              name: Upstairs AC Runtime Alert
+              entity: sensor.ecobee_ac_runtime_upstairs
+
+      - type: markdown
+        content: >
+          This dashboard provides an overview of your Ecobee's performance based on the learning integration.
+          The 'AC Runtime' shows the current runtime, while 'Average Runtime' shows the historical average.
+          'Avg. Time per 1°F Change' indicates how long it typically takes to change the temperature by one degree.
+          An alert is triggered when the current runtime significantly exceeds the average runtime.
