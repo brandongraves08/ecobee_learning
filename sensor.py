@@ -5,6 +5,7 @@ from datetime import timedelta, datetime
 import voluptuous as vol
 import sqlite3
 import statistics
+import requests
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -12,9 +13,9 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import (
     CONF_NAME,
-    ATTR_UNIT_OF_MEASUREMENT,
     UnitOfTemperature,
     UnitOfTime,
+    PERCENTAGE,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -29,14 +30,19 @@ DOMAIN = "ecobee_learning"
 
 CONF_CLIMATE_ENTITY = "climate_entity"
 CONF_DB_PATH = "db_path"
+CONF_ENERGY_RATE = "energy_rate"
+CONF_WEATHER_API_KEY = "weather_api_key"
 
 DEFAULT_NAME = "Ecobee AC Runtime"
 DEFAULT_DB_PATH = "ecobee_learning.db"
+DEFAULT_ENERGY_RATE = 0.12  # $/kWh
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
     vol.Required(CONF_CLIMATE_ENTITY): cv.entity_id,
     vol.Optional(CONF_DB_PATH, default=DEFAULT_DB_PATH): cv.string,
+    vol.Optional(CONF_ENERGY_RATE, default=DEFAULT_ENERGY_RATE): cv.positive_float,
+    vol.Optional(CONF_WEATHER_API_KEY): cv.string,
 })
 
 async def async_setup_platform(
@@ -49,21 +55,38 @@ async def async_setup_platform(
     name = config.get(CONF_NAME)
     climate_entity = config.get(CONF_CLIMATE_ENTITY)
     db_path = config.get(CONF_DB_PATH)
+    energy_rate = config.get(CONF_ENERGY_RATE)
+    weather_api_key = config.get(CONF_WEATHER_API_KEY)
 
-    data = EcobeeLearningData(hass, climate_entity, db_path)
+    data = EcobeeLearningData(hass, climate_entity, db_path, energy_rate, weather_api_key)
     await data.async_update()
 
-    sensor = EcobeeRuntimeSensor(name, data)
-    async_add_entities([sensor], True)
+    sensors = [
+        EcobeeRuntimeSensor(f"{name} Current Runtime", "current_runtime", data),
+        EcobeeRuntimeSensor(f"{name} Average Runtime", "average_runtime", data),
+        EcobeeTemperatureSensor(f"{name} Current Temperature", "current_temp", data),
+        EcobeeTemperatureSensor(f"{name} Target Temperature", "target_temp", data),
+        EcobeeStateSensor(f"{name} HVAC Action", "hvac_action", data),
+        EcobeeStateSensor(f"{name} Equipment Running", "equipment_running", data),
+        EcobeeBooleanSensor(f"{name} Alert", "alert", data),
+        EcobeeRuntimeSensor(f"{name} Avg Time per Degree", "avg_time_per_degree", data),
+        EcobeeEfficiencySensor(f"{name} Energy Efficiency Score", "efficiency_score", data),
+        EcobeeCostSensor(f"{name} Estimated Daily Cost", "estimated_daily_cost", data),
+        EcobeeTemperatureSensor(f"{name} Outdoor Temperature", "outdoor_temp", data),
+    ]
+
+    async_add_entities(sensors, True)
 
 class EcobeeLearningData:
     """Manage Ecobee data and historical storage."""
 
-    def __init__(self, hass, climate_entity, db_path):
+    def __init__(self, hass, climate_entity, db_path, energy_rate, weather_api_key):
         """Initialize the data object."""
         self.hass = hass
         self.climate_entity = climate_entity
         self.db_path = db_path
+        self.energy_rate = energy_rate
+        self.weather_api_key = weather_api_key
         self.conn = sqlite3.connect(db_path)
         self.create_table()
         self.data = {}
@@ -75,7 +98,7 @@ class EcobeeLearningData:
         cursor = self.conn.cursor()
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS runtime_data
-        (timestamp TEXT, runtime REAL, temp_change REAL, current_temp REAL)
+        (timestamp TEXT, runtime REAL, temp_change REAL, current_temp REAL, outdoor_temp REAL)
         ''')
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS temp_change_rate
@@ -84,7 +107,7 @@ class EcobeeLearningData:
         self.conn.commit()
 
     async def async_update(self):
-        """Update data from Home Assistant climate entity."""
+        """Update data from Home Assistant climate entity and external sources."""
         climate_state = self.hass.states.get(self.climate_entity)
 
         if climate_state:
@@ -99,18 +122,33 @@ class EcobeeLearningData:
             elif 'compCool' not in self.data.get('equipment_running', '') and self.cooling_start_time is not None:
                 runtime = (datetime.now() - self.cooling_start_time).total_seconds() / 60
                 temp_change = self.cooling_start_temp - self.data['current_temp']
-                self.store_data(runtime, temp_change, self.data['current_temp'])
+                outdoor_temp = await self.get_outdoor_temperature()
+                self.store_data(runtime, temp_change, self.data['current_temp'], outdoor_temp)
                 self.cooling_start_time = None
                 self.cooling_start_temp = None
 
-    def store_data(self, runtime, temp_change, current_temp):
+            # Update current runtime
+            if self.cooling_start_time:
+                self.data['current_runtime'] = (datetime.now() - self.cooling_start_time).total_seconds() / 60
+            else:
+                self.data['current_runtime'] = 0
+
+            # Update other calculated fields
+            self.data['average_runtime'] = self.get_average_runtime()
+            self.data['alert'] = self.check_for_alert()
+            self.data['avg_time_per_degree'] = self.get_avg_temp_change_rate()
+            self.data['efficiency_score'] = self.calculate_efficiency_score()
+            self.data['estimated_daily_cost'] = self.estimate_daily_cost()
+            self.data['outdoor_temp'] = await self.get_outdoor_temperature()
+
+    def store_data(self, runtime, temp_change, current_temp, outdoor_temp):
         """Store the runtime data in the database."""
         try:
             cursor = self.conn.cursor()
             cursor.execute('''
-            INSERT INTO runtime_data (timestamp, runtime, temp_change, current_temp)
-            VALUES (?, ?, ?, ?)
-            ''', (datetime.now().isoformat(), float(runtime), float(temp_change), float(current_temp)))
+            INSERT INTO runtime_data (timestamp, runtime, temp_change, current_temp, outdoor_temp)
+            VALUES (?, ?, ?, ?, ?)
+            ''', (datetime.now().isoformat(), float(runtime), float(temp_change), float(current_temp), float(outdoor_temp)))
             self.conn.commit()
 
             # Calculate and store the rate of temperature change
@@ -124,18 +162,25 @@ class EcobeeLearningData:
         except Exception as e:
             _LOGGER.error(f"Error storing data in database: {e}")
 
-    def get_historical_data(self):
-        """Retrieve historical data from the database."""
+    def get_average_runtime(self):
+        """Calculate average runtime from historical data."""
         try:
             cursor = self.conn.cursor()
             cursor.execute('''
-            SELECT * FROM runtime_data
+            SELECT AVG(runtime) FROM runtime_data
             WHERE timestamp > datetime('now', '-7 days')
             ''')
-            return cursor.fetchall()
+            result = cursor.fetchone()
+            return round(result[0], 2) if result and result[0] is not None else None
         except Exception as e:
-            _LOGGER.error(f"Error retrieving historical data: {e}")
-            return []
+            _LOGGER.error(f"Error calculating average runtime: {e}")
+            return None
+
+    def check_for_alert(self):
+        """Check if current runtime exceeds 1.5 times the average."""
+        if self.data['current_runtime'] and self.data['average_runtime']:
+            return self.data['current_runtime'] > self.data['average_runtime'] * 1.5
+        return False
 
     def get_avg_temp_change_rate(self):
         """Retrieve the average temperature change rate from the database."""
@@ -146,33 +191,73 @@ class EcobeeLearningData:
             WHERE timestamp > datetime('now', '-7 days')
             ''')
             result = cursor.fetchone()
-            return result[0] if result and result[0] is not None else None
+            return round(result[0], 2) if result and result[0] is not None else None
         except Exception as e:
             _LOGGER.error(f"Error retrieving average temperature change rate: {e}")
             return None
 
-class EcobeeRuntimeSensor(SensorEntity):
-    """Representation of an Ecobee Runtime sensor."""
+    def calculate_efficiency_score(self):
+        """Calculate an energy efficiency score based on runtime and temperature change."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+            SELECT AVG(runtime / temp_change) FROM runtime_data
+            WHERE timestamp > datetime('now', '-7 days')
+            ''')
+            result = cursor.fetchone()
+            if result and result[0] is not None:
+                # Lower values are better (less runtime per degree change)
+                # Inverting and scaling to 0-100 range
+                return round(100 / (1 + result[0]), 2)
+            return None
+        except Exception as e:
+            _LOGGER.error(f"Error calculating efficiency score: {e}")
+            return None
 
-    def __init__(self, name, data):
+    def estimate_daily_cost(self):
+        """Estimate the daily cost based on runtime and energy rate."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+            SELECT SUM(runtime) FROM runtime_data
+            WHERE timestamp > datetime('now', '-1 day')
+            ''')
+            result = cursor.fetchone()
+            if result and result[0] is not None:
+                # Assuming 3.5 kW power consumption for an average AC unit
+                daily_kwh = (result[0] / 60) * 3.5
+                return round(daily_kwh * self.energy_rate, 2)
+            return None
+        except Exception as e:
+            _LOGGER.error(f"Error estimating daily cost: {e}")
+            return None
+
+    async def get_outdoor_temperature(self):
+        """Fetch outdoor temperature from a weather API."""
+        if not self.weather_api_key:
+            return None
+        
+        try:
+            # Replace with your preferred weather API
+            url = f"http://api.openweathermap.org/data/2.5/weather?q=YourCity&appid={self.weather_api_key}&units=imperial"
+            response = await self.hass.async_add_executor_job(requests.get, url)
+            data = response.json()
+            return data['main']['temp']
+        except Exception as e:
+            _LOGGER.error(f"Error fetching outdoor temperature: {e}")
+            return None
+
+class EcobeeBaseSensor(SensorEntity):
+    """Base representation of an Ecobee sensor."""
+
+    def __init__(self, name, attribute, data):
         """Initialize the sensor."""
         self._name = name
+        self._attribute = attribute
         self._data = data
-        self._attributes = {}
-        self._attr_unique_id = f"ecobee_learning_{data.climate_entity}"
-        self._attr_device_class = "duration"
+        self._state = None
+        self._attr_unique_id = f"ecobee_learning_{data.climate_entity}_{attribute}"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    @property
-    def device_info(self):
-        """Return device information about this entity."""
-        return {
-            "identifiers": {(DOMAIN, self._data.climate_entity)},
-            "name": self._name,
-            "manufacturer": "Ecobee",
-            "model": "Learning Sensor",
-            "via_device": (DOMAIN, self._data.climate_entity),
-        }
 
     @property
     def name(self):
@@ -182,73 +267,57 @@ class EcobeeRuntimeSensor(SensorEntity):
     @property
     def state(self):
         """Return the state of the sensor."""
-        return self._attributes.get('current_runtime', 0)
+        return self._state
 
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes."""
-        return self._attributes
+    async def async_update(self):
+        """Fetch new state data for the sensor."""
+        await self._data.async_update()
+        self._state = self._data.data.get(self._attribute)
+
+class EcobeeRuntimeSensor(EcobeeBaseSensor):
+    """Representation of an Ecobee runtime sensor."""
 
     @property
     def unit_of_measurement(self):
         """Return the unit of measurement."""
         return UnitOfTime.MINUTES
 
-    async def async_added_to_hass(self):
-        """Run when entity about to be added."""
-        await super().async_added_to_hass()
-        
-        @callback
-        def sensor_state_listener(entity, old_state, new_state):
-            """Handle sensor state changes."""
-            self.async_schedule_update_ha_state(True)
+class EcobeeTemperatureSensor(EcobeeBaseSensor):
+    """Representation of an Ecobee temperature sensor."""
 
-        self.async_on_remove(
-            async_track_state_change(
-                self.hass, [self._data.climate_entity], sensor_state_listener
-            )
-        )
+    @property
+    def unit_of_measurement(self):
+        """Return the unit of measurement."""
+        return UnitOfTemperature.FAHRENHEIT
 
-    async def async_update(self):
-        """Get the latest data and updates the state."""
-        await self._data.async_update()
-        
-        try:
-            if self._data.cooling_start_time and 'compCool' in self._data.data.get('equipment_running', ''):
-                runtime = (datetime.now() - self._data.cooling_start_time).total_seconds() / 60
-                current_runtime = round(runtime, 2)
-            else:
-                current_runtime = 0
+class EcobeeStateSensor(EcobeeBaseSensor):
+    """Representation of an Ecobee state sensor."""
 
-            history = self._data.get_historical_data()
+    @property
+    def unit_of_measurement(self):
+        """Return the unit of measurement."""
+        return None
 
-            if len(history) > 1:
-                runtimes = [float(row[1]) for row in history]
-                avg_runtime = statistics.mean(runtimes)
+class EcobeeBooleanSensor(EcobeeBaseSensor):
+    """Representation of an Ecobee boolean sensor."""
 
-                self._attributes['current_runtime'] = current_runtime
-                self._attributes['average_runtime'] = round(avg_runtime, 2)
-                self._attributes['current_temp'] = self._data.data.get('current_temp')
-                self._attributes['target_temp'] = self._data.data.get('target_temp')
-                self._attributes['hvac_action'] = self._data.data.get('hvac_action')
-                self._attributes['equipment_running'] = self._data.data.get('equipment_running')
-                self._attributes['alert'] = current_runtime > avg_runtime * 1.5 if current_runtime > 0 else False
+    @property
+    def unit_of_measurement(self):
+        """Return the unit of measurement."""
+        return None
 
-                avg_temp_change_rate = self._data.get_avg_temp_change_rate()
-                if avg_temp_change_rate:
-                    self._attributes['avg_time_per_degree'] = round(avg_temp_change_rate, 2)
+class EcobeeEfficiencySensor(EcobeeBaseSensor):
+    """Representation of an Ecobee efficiency sensor."""
 
-                if self._attributes['alert']:
-                    _LOGGER.warning(f"Anomalous runtime detected! Current: {current_runtime}, Average: {avg_runtime}")
-            else:
-                _LOGGER.warning("Not enough historical data to make predictions yet.")
-                self._attributes['current_runtime'] = current_runtime
-                self._attributes['current_temp'] = self._data.data.get('current_temp')
-                self._attributes['target_temp'] = self._data.data.get('target_temp')
-                self._attributes['hvac_action'] = self._data.data.get('hvac_action')
-                self._attributes['equipment_running'] = self._data.data.get('equipment_running')
-                self._attributes['alert'] = False
+    @property
+    def unit_of_measurement(self):
+        """Return the unit of measurement."""
+        return PERCENTAGE
 
-        except Exception as e:
-            _LOGGER.exception(f"Error updating Ecobee Learning sensor: {e}")
-            self._attributes = {}
+class EcobeeCostSensor(EcobeeBaseSensor):
+    """Representation of an Ecobee cost sensor."""
+
+    @property
+    def unit_of_measurement(self):
+        """Return the unit of measurement."""
+        return "$"
