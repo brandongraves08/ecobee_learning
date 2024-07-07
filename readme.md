@@ -29,7 +29,7 @@ The Ecobee Learning Integration is a custom component for Home Assistant that pr
 
 ## Configuration
 
-Add the following to your `configuration.yaml`:
+1. Add the following to your `configuration.yaml`:
 
 ```yaml
 sensor:
@@ -37,17 +37,41 @@ sensor:
     name: "Ecobee Downstairs"
     climate_entity: climate.downstairs
     db_path: "ecobee_learning_downstairs.db"
-    energy_rate: 0.12  # Your local energy rate in $/kWh
-    weather_api_key: "your_openweathermap_api_key"  # Optional, for outdoor temperature
+    energy_rate: !secret ecobee_energy_rate
+    weather_api_key: !secret openweathermap_api_key
   - platform: ecobee_learning
     name: "Ecobee Upstairs"
     climate_entity: climate.upstairs
     db_path: "ecobee_learning_upstairs.db"
-    energy_rate: 0.12
-    weather_api_key: "your_openweathermap_api_key"
+    energy_rate: !secret ecobee_energy_rate
+    weather_api_key: !secret openweathermap_api_key
 ```
 
-Replace `climate.downstairs` and `climate.upstairs` with the entity IDs of your Ecobee thermostats in Home Assistant. Adjust the `energy_rate` to match your local electricity costs. If you want to include outdoor temperature data, sign up for a free API key at OpenWeatherMap and include it in the `weather_api_key` field.
+Replace `climate.downstairs` and `climate.upstairs` with the entity IDs of your Ecobee thermostats in Home Assistant.
+
+2. Create or edit the `secrets.yaml` file in the same directory as your `configuration.yaml` and add the following:
+
+```yaml
+openweathermap_api_key: "your_actual_api_key_here"
+ecobee_energy_rate: 0.12
+```
+
+Replace `"your_actual_api_key_here"` with your actual OpenWeatherMap API key, and adjust the energy rate to match your local electricity costs.
+
+3. Make sure your `secrets.yaml` file is included in your `.gitignore` file if you're using version control, to avoid accidentally sharing your API key publicly.
+
+4. Restart Home Assistant to apply these changes.
+
+### Getting an OpenWeatherMap API Key
+
+To get an OpenWeatherMap API key:
+
+1. Go to https://openweathermap.org/ and sign up for a free account.
+2. Once logged in, go to your account dashboard.
+3. Look for "API keys" and generate a new key.
+4. Copy this key and use it in your `secrets.yaml` file as shown above.
+
+Note: The free tier of OpenWeatherMap has usage limits, but it should be more than sufficient for this integration's needs.
 
 ## Usage
 
@@ -87,6 +111,8 @@ To add the dashboard, copy the provided YAML configuration into a new dashboard 
 - If you're not seeing any data, ensure that your AC has run for at least one cooling cycle.
 - The energy efficiency score and cost estimates require multiple cooling cycles to provide accurate data. Give it some time to collect sufficient data.
 - If outdoor temperature data is not appearing, check that your OpenWeatherMap API key is correct and that you have an active internet connection.
+- Make sure your `secrets.yaml` file is properly formatted and contains the correct API key and energy rate.
+- If you've made changes to the configuration, always remember to restart Home Assistant.
 
 ## Contributing
 
