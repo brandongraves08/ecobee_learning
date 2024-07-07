@@ -1,0 +1,173 @@
+title: Ecobee Learning Dashboard
+views:
+  - title: Ecobee Overview
+    cards:
+      - type: vertical-stack
+        title: Downstairs
+        cards:
+          - type: entities
+            title: Downstairs Runtime Status
+            entities:
+              - entity: sensor.ecobee_downstairs_current_runtime
+                name: AC Runtime
+              - entity: sensor.ecobee_downstairs_average_runtime
+                name: Average Runtime
+              - entity: sensor.ecobee_downstairs_current_temperature
+                name: Current Temperature
+              - entity: sensor.ecobee_downstairs_target_temperature
+                name: Target Temperature
+              - entity: sensor.ecobee_downstairs_outdoor_temperature
+                name: Outdoor Temperature
+              - entity: sensor.ecobee_downstairs_hvac_action
+                name: HVAC Action
+              - entity: sensor.ecobee_downstairs_equipment_running
+                name: Equipment Running
+              - entity: sensor.ecobee_downstairs_alert
+                name: Alert Status
+              - entity: sensor.ecobee_downstairs_avg_time_per_degree
+                name: Avg. Time per 1°F Change
+              - entity: sensor.ecobee_downstairs_energy_efficiency_score
+                name: Energy Efficiency Score
+              - entity: sensor.ecobee_downstairs_estimated_daily_cost
+                name: Estimated Daily Cost
+
+          - type: history-graph
+            title: Downstairs Temperature and Runtime History
+            entities:
+              - entity: sensor.ecobee_downstairs_current_temperature
+              - entity: sensor.ecobee_downstairs_outdoor_temperature
+              - entity: sensor.ecobee_downstairs_current_runtime
+            hours_to_show: 24
+            refresh_interval: 0
+
+          - type: custom:mini-graph-card
+            entities:
+              - entity: sensor.ecobee_downstairs_energy_efficiency_score
+            name: Energy Efficiency Trend
+            hours_to_show: 168
+            points_per_hour: 0.25
+            line_color: var(--accent-color)
+            color_thresholds:
+              - value: 50
+                color: "#E45E65"
+              - value: 75
+                color: "#FFEB3B"
+              - value: 90
+                color: "#4CAF50"
+
+          - type: gauge
+            name: Energy Efficiency Score
+            entity: sensor.ecobee_downstairs_energy_efficiency_score
+            min: 0
+            max: 100
+            severity:
+              green: 75
+              yellow: 50
+              red: 0
+
+          - type: custom:mini-graph-card
+            entities:
+              - entity: sensor.ecobee_downstairs_estimated_daily_cost
+            name: Estimated Daily Cost Trend
+            hours_to_show: 168
+            points_per_hour: 0.25
+            line_color: "#43A047"
+
+          - type: conditional
+            conditions:
+              - entity: sensor.ecobee_downstairs_alert
+                state: "True"
+            card:
+              type: alarm-panel
+              name: Downstairs AC Runtime Alert
+              entity: sensor.ecobee_downstairs_alert
+
+      - type: vertical-stack
+        title: Upstairs
+        cards:
+          - type: entities
+            title: Upstairs Runtime Status
+            entities:
+              - entity: sensor.ecobee_upstairs_current_runtime
+                name: AC Runtime
+              - entity: sensor.ecobee_upstairs_average_runtime
+                name: Average Runtime
+              - entity: sensor.ecobee_upstairs_current_temperature
+                name: Current Temperature
+              - entity: sensor.ecobee_upstairs_target_temperature
+                name: Target Temperature
+              - entity: sensor.ecobee_upstairs_outdoor_temperature
+                name: Outdoor Temperature
+              - entity: sensor.ecobee_upstairs_hvac_action
+                name: HVAC Action
+              - entity: sensor.ecobee_upstairs_equipment_running
+                name: Equipment Running
+              - entity: sensor.ecobee_upstairs_alert
+                name: Alert Status
+              - entity: sensor.ecobee_upstairs_avg_time_per_degree
+                name: Avg. Time per 1°F Change
+              - entity: sensor.ecobee_upstairs_energy_efficiency_score
+                name: Energy Efficiency Score
+              - entity: sensor.ecobee_upstairs_estimated_daily_cost
+                name: Estimated Daily Cost
+
+          - type: history-graph
+            title: Upstairs Temperature and Runtime History
+            entities:
+              - entity: sensor.ecobee_upstairs_current_temperature
+              - entity: sensor.ecobee_upstairs_outdoor_temperature
+              - entity: sensor.ecobee_upstairs_current_runtime
+            hours_to_show: 24
+            refresh_interval: 0
+
+          - type: custom:mini-graph-card
+            entities:
+              - entity: sensor.ecobee_upstairs_energy_efficiency_score
+            name: Energy Efficiency Trend
+            hours_to_show: 168
+            points_per_hour: 0.25
+            line_color: var(--accent-color)
+            color_thresholds:
+              - value: 50
+                color: "#E45E65"
+              - value: 75
+                color: "#FFEB3B"
+              - value: 90
+                color: "#4CAF50"
+
+          - type: gauge
+            name: Energy Efficiency Score
+            entity: sensor.ecobee_upstairs_energy_efficiency_score
+            min: 0
+            max: 100
+            severity:
+              green: 75
+              yellow: 50
+              red: 0
+
+          - type: custom:mini-graph-card
+            entities:
+              - entity: sensor.ecobee_upstairs_estimated_daily_cost
+            name: Estimated Daily Cost Trend
+            hours_to_show: 168
+            points_per_hour: 0.25
+            line_color: "#43A047"
+
+          - type: conditional
+            conditions:
+              - entity: sensor.ecobee_upstairs_alert
+                state: "True"
+            card:
+              type: alarm-panel
+              name: Upstairs AC Runtime Alert
+              entity: sensor.ecobee_upstairs_alert
+
+      - type: markdown
+        content: >
+          This dashboard provides an overview of your Ecobee's performance based on the learning integration.
+          'AC Runtime' shows the current runtime, while 'Average Runtime' shows the historical average.
+          'Avg. Time per 1°F Change' indicates how long it typically takes to change the temperature by one degree.
+          The 'Energy Efficiency Score' provides a measure of how efficiently your system is operating.
+          'Estimated Daily Cost' gives you an idea of your HVAC energy expenses.
+          An alert is triggered when the current runtime significantly exceeds the average runtime.
+          The outdoor temperature is also displayed to help understand how external conditions affect your system's performance.
