@@ -1,173 +1,97 @@
-title: Ecobee Learning Dashboard
-views:
-  - title: Ecobee Overview
-    cards:
-      - type: vertical-stack
-        title: Downstairs
-        cards:
-          - type: entities
-            title: Downstairs Runtime Status
-            entities:
-              - entity: sensor.ecobee_downstairs_current_runtime
-                name: AC Runtime
-              - entity: sensor.ecobee_downstairs_average_runtime
-                name: Average Runtime
-              - entity: sensor.ecobee_downstairs_current_temperature
-                name: Current Temperature
-              - entity: sensor.ecobee_downstairs_target_temperature
-                name: Target Temperature
-              - entity: sensor.ecobee_downstairs_outdoor_temperature
-                name: Outdoor Temperature
-              - entity: sensor.ecobee_downstairs_hvac_action
-                name: HVAC Action
-              - entity: sensor.ecobee_downstairs_equipment_running
-                name: Equipment Running
-              - entity: sensor.ecobee_downstairs_alert
-                name: Alert Status
-              - entity: sensor.ecobee_downstairs_avg_time_per_degree
-                name: Avg. Time per 1°F Change
-              - entity: sensor.ecobee_downstairs_energy_efficiency_score
-                name: Energy Efficiency Score
-              - entity: sensor.ecobee_downstairs_estimated_daily_cost
-                name: Estimated Daily Cost
+# Ecobee Learning Integration for Home Assistant
 
-          - type: history-graph
-            title: Downstairs Temperature and Runtime History
-            entities:
-              - entity: sensor.ecobee_downstairs_current_temperature
-              - entity: sensor.ecobee_downstairs_outdoor_temperature
-              - entity: sensor.ecobee_downstairs_current_runtime
-            hours_to_show: 24
-            refresh_interval: 0
+## Overview
 
-          - type: custom:mini-graph-card
-            entities:
-              - entity: sensor.ecobee_downstairs_energy_efficiency_score
-            name: Energy Efficiency Trend
-            hours_to_show: 168
-            points_per_hour: 0.25
-            line_color: var(--accent-color)
-            color_thresholds:
-              - value: 50
-                color: "#E45E65"
-              - value: 75
-                color: "#FFEB3B"
-              - value: 90
-                color: "#4CAF50"
+The Ecobee Learning Integration is a custom component for Home Assistant that provides advanced monitoring and analysis of your Ecobee thermostat's performance. This integration tracks AC runtime, learns from historical data, alerts you to anomalous behavior, calculates energy efficiency, estimates costs, and provides insights based on outdoor temperature data.
 
-          - type: gauge
-            name: Energy Efficiency Score
-            entity: sensor.ecobee_downstairs_energy_efficiency_score
-            min: 0
-            max: 100
-            severity:
-              green: 75
-              yellow: 50
-              red: 0
+## Features
 
-          - type: custom:mini-graph-card
-            entities:
-              - entity: sensor.ecobee_downstairs_estimated_daily_cost
-            name: Estimated Daily Cost Trend
-            hours_to_show: 168
-            points_per_hour: 0.25
-            line_color: "#43A047"
+- Tracks AC runtime and cooling cycles
+- Stores historical data for analysis
+- Calculates average runtime
+- Detects anomalous behavior (when runtime exceeds 1.5 times the average)
+- Calculates the average time it takes to change temperature by one degree
+- Provides an energy efficiency score based on system performance
+- Estimates daily energy costs
+- Fetches and incorporates outdoor temperature data (optional)
+- Provides detailed attributes including current temperature, target temperature, HVAC action, and equipment status
+- Custom Lovelace dashboard for easy monitoring
+- Supports multiple Ecobee thermostats (e.g., upstairs and downstairs)
 
-          - type: conditional
-            conditions:
-              - entity: sensor.ecobee_downstairs_alert
-                state: "True"
-            card:
-              type: alarm-panel
-              name: Downstairs AC Runtime Alert
-              entity: sensor.ecobee_downstairs_alert
+## Installation
 
-      - type: vertical-stack
-        title: Upstairs
-        cards:
-          - type: entities
-            title: Upstairs Runtime Status
-            entities:
-              - entity: sensor.ecobee_upstairs_current_runtime
-                name: AC Runtime
-              - entity: sensor.ecobee_upstairs_average_runtime
-                name: Average Runtime
-              - entity: sensor.ecobee_upstairs_current_temperature
-                name: Current Temperature
-              - entity: sensor.ecobee_upstairs_target_temperature
-                name: Target Temperature
-              - entity: sensor.ecobee_upstairs_outdoor_temperature
-                name: Outdoor Temperature
-              - entity: sensor.ecobee_upstairs_hvac_action
-                name: HVAC Action
-              - entity: sensor.ecobee_upstairs_equipment_running
-                name: Equipment Running
-              - entity: sensor.ecobee_upstairs_alert
-                name: Alert Status
-              - entity: sensor.ecobee_upstairs_avg_time_per_degree
-                name: Avg. Time per 1°F Change
-              - entity: sensor.ecobee_upstairs_energy_efficiency_score
-                name: Energy Efficiency Score
-              - entity: sensor.ecobee_upstairs_estimated_daily_cost
-                name: Estimated Daily Cost
+1. Navigate to your Home Assistant configuration directory.
+2. Create a new directory: `custom_components/ecobee_learning/`
+3. Copy the following files into this new directory:
+   - `__init__.py`
+   - `manifest.json`
+   - `sensor.py`
 
-          - type: history-graph
-            title: Upstairs Temperature and Runtime History
-            entities:
-              - entity: sensor.ecobee_upstairs_current_temperature
-              - entity: sensor.ecobee_upstairs_outdoor_temperature
-              - entity: sensor.ecobee_upstairs_current_runtime
-            hours_to_show: 24
-            refresh_interval: 0
+## Configuration
 
-          - type: custom:mini-graph-card
-            entities:
-              - entity: sensor.ecobee_upstairs_energy_efficiency_score
-            name: Energy Efficiency Trend
-            hours_to_show: 168
-            points_per_hour: 0.25
-            line_color: var(--accent-color)
-            color_thresholds:
-              - value: 50
-                color: "#E45E65"
-              - value: 75
-                color: "#FFEB3B"
-              - value: 90
-                color: "#4CAF50"
+Add the following to your `configuration.yaml`:
 
-          - type: gauge
-            name: Energy Efficiency Score
-            entity: sensor.ecobee_upstairs_energy_efficiency_score
-            min: 0
-            max: 100
-            severity:
-              green: 75
-              yellow: 50
-              red: 0
+```yaml
+sensor:
+  - platform: ecobee_learning
+    name: "Ecobee Downstairs"
+    climate_entity: climate.downstairs
+    db_path: "ecobee_learning_downstairs.db"
+    energy_rate: 0.12  # Your local energy rate in $/kWh
+    weather_api_key: "your_openweathermap_api_key"  # Optional, for outdoor temperature
+  - platform: ecobee_learning
+    name: "Ecobee Upstairs"
+    climate_entity: climate.upstairs
+    db_path: "ecobee_learning_upstairs.db"
+    energy_rate: 0.12
+    weather_api_key: "your_openweathermap_api_key"
+```
 
-          - type: custom:mini-graph-card
-            entities:
-              - entity: sensor.ecobee_upstairs_estimated_daily_cost
-            name: Estimated Daily Cost Trend
-            hours_to_show: 168
-            points_per_hour: 0.25
-            line_color: "#43A047"
+Replace `climate.downstairs` and `climate.upstairs` with the entity IDs of your Ecobee thermostats in Home Assistant. Adjust the `energy_rate` to match your local electricity costs. If you want to include outdoor temperature data, sign up for a free API key at OpenWeatherMap and include it in the `weather_api_key` field.
 
-          - type: conditional
-            conditions:
-              - entity: sensor.ecobee_upstairs_alert
-                state: "True"
-            card:
-              type: alarm-panel
-              name: Upstairs AC Runtime Alert
-              entity: sensor.ecobee_upstairs_alert
+## Usage
 
-      - type: markdown
-        content: >
-          This dashboard provides an overview of your Ecobee's performance based on the learning integration.
-          'AC Runtime' shows the current runtime, while 'Average Runtime' shows the historical average.
-          'Avg. Time per 1°F Change' indicates how long it typically takes to change the temperature by one degree.
-          The 'Energy Efficiency Score' provides a measure of how efficiently your system is operating.
-          'Estimated Daily Cost' gives you an idea of your HVAC energy expenses.
-          An alert is triggered when the current runtime significantly exceeds the average runtime.
-          The outdoor temperature is also displayed to help understand how external conditions affect your system's performance.
+After installation and configuration, the integration will create new sensor entities in Home Assistant. These sensors provide the following attributes:
+
+- `current_runtime`: Current cooling cycle runtime in minutes
+- `average_runtime`: Average runtime based on historical data
+- `current_temp`: Current temperature
+- `target_temp`: Target temperature set on the thermostat
+- `hvac_action`: Current HVAC action (cooling, idle, etc.)
+- `equipment_running`: Current status of HVAC equipment
+- `alert`: Boolean indicating if current runtime is anomalous
+- `avg_time_per_degree`: Average time it takes to change the temperature by one degree
+- `efficiency_score`: Energy efficiency score (0-100) based on system performance
+- `estimated_daily_cost`: Estimated daily cost of AC operation
+- `outdoor_temp`: Current outdoor temperature (if weather API key is provided)
+
+The sensor's state will be the current runtime when the system is cooling, and 0 when it's not.
+
+## Dashboard
+
+A custom Lovelace dashboard is provided to visualize the data from this integration. The dashboard includes:
+
+- Runtime status for each thermostat
+- Temperature and runtime history graphs
+- Energy efficiency score displayed as both a trend graph and a gauge
+- Estimated daily cost trend
+- Conditional cards that appear when anomalies are detected
+
+To add the dashboard, copy the provided YAML configuration into a new dashboard in your Home Assistant Lovelace UI.
+
+## Troubleshooting
+
+- Ensure that your Ecobee integration in Home Assistant is working correctly.
+- Check the Home Assistant logs for any error messages related to the Ecobee Learning integration.
+- Verify that the `climate_entity` in your configuration matches your Ecobee thermostat's entity ID in Home Assistant.
+- If you're not seeing any data, ensure that your AC has run for at least one cooling cycle.
+- The energy efficiency score and cost estimates require multiple cooling cycles to provide accurate data. Give it some time to collect sufficient data.
+- If outdoor temperature data is not appearing, check that your OpenWeatherMap API key is correct and that you have an active internet connection.
+
+## Contributing
+
+Contributions to improve the Ecobee Learning Integration are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
