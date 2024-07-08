@@ -57,6 +57,7 @@ async def async_setup_platform(
     db_path = config.get(CONF_DB_PATH)
     energy_rate = config.get(CONF_ENERGY_RATE)
     weather_api_key = config.get(CONF_WEATHER_API_KEY)
+    self.city = config.get('weather_city')
 
     data = EcobeeLearningData(hass, climate_entity, db_path, energy_rate, weather_api_key)
     await data.async_update()
@@ -239,7 +240,7 @@ class EcobeeLearningData:
         
         try:
             # Replace with your preferred weather API
-            url = f"http://api.openweathermap.org/data/2.5/weather?q=YourCity&appid={self.weather_api_key}&units=imperial"
+            url = f"http://api.openweathermap.org/data/2.5/weather?q={self.city}&appid={self.weather_api_key}&units=imperial"
             response = await self.hass.async_add_executor_job(requests.get, url)
             data = response.json()
             return data['main']['temp']
