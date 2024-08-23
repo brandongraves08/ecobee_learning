@@ -30,44 +30,36 @@ The Ecobee Learning Integration is a custom component for Home Assistant that pr
 
 1. Add the following to your `configuration.yaml`:
 
-```yaml
-sensor:
-  - platform: ecobee_learning
-    name: "Ecobee Downstairs"
-    climate_entity: climate.downstairs
-    db_path: "ecobee_learning_downstairs.db"
-    energy_rate: !secret ecobee_energy_rate
-    weather_api_key: !secret openweathermap_api_key
-  - platform: ecobee_learning
-    name: "Ecobee Upstairs"
-    climate_entity: climate.upstairs
-    db_path: "ecobee_learning_upstairs.db"
-    energy_rate: !secret ecobee_energy_rate
-    weather_api_key: !secret openweathermap_api_key
-```
+    ```yaml
+    sensor:
+      - platform: ecobee_learning
+        name: "Ecobee Downstairs"
+        climate_entity: climate.downstairs
+        db_path: "ecobee_learning_downstairs.db"
+        energy_rate: !secret ecobee_energy_rate
+        zip_code: !secret weather_zip_code
+      - platform: ecobee_learning
+        name: "Ecobee Upstairs"
+        climate_entity: climate.upstairs
+        db_path: "ecobee_learning_upstairs.db"
+        energy_rate: !secret ecobee_energy_rate
+        zip_code: !secret weather_zip_code
+    ```
 
-Replace `climate.downstairs` and `climate.upstairs` with your Ecobee thermostat entity IDs.
+    Replace `climate.downstairs` and `climate.upstairs` with your Ecobee thermostat entity IDs.
 
 2. Add to your `secrets.yaml`:
 
-```yaml
-openweathermap_api_key: "your_actual_api_key_here"
-ecobee_energy_rate: 0.12
-```
+    ```yaml
+    weather_zip_code: "your_zip_code_here"
+    ecobee_energy_rate: 0.12
+    ```
 
-Replace `"your_actual_api_key_here"` with your OpenWeatherMap API key and adjust the energy rate to match your local electricity costs.
+    Replace `"your_zip_code_here"` with your actual ZIP code and adjust the energy rate to match your local electricity costs.
 
 3. Ensure your `secrets.yaml` is in your `.gitignore` if using version control.
 
 4. Restart Home Assistant to apply changes.
-
-### Getting an OpenWeatherMap API Key
-
-1. Sign up for a free account at https://openweathermap.org/
-2. In your account dashboard, generate a new API key
-3. Copy this key to your `secrets.yaml` file
-
-Note: The free tier should be sufficient for this integration's needs.
 
 ## Usage
 
@@ -83,7 +75,7 @@ After setup, new sensor entities will be created with the following attributes:
 - `avg_time_per_degree`: Average time to change temperature by one degree
 - `efficiency_score`: Energy efficiency score (0-100)
 - `estimated_daily_cost`: Estimated daily AC operation cost
-- `outdoor_temp`: Current outdoor temperature (if weather API key provided)
+- `outdoor_temp`: Current outdoor temperature (based on ZIP code)
 
 The sensor's state will be the current runtime when cooling, and 0 when not.
 
@@ -105,7 +97,7 @@ To add the dashboard, copy the provided YAML configuration into a new dashboard 
 - Check Home Assistant logs for error messages
 - Ensure `climate_entity` in your configuration matches your Ecobee thermostat's entity ID
 - Allow time for data collection (multiple cooling cycles for accurate efficiency and cost data)
-- For missing outdoor temperature data, check your OpenWeatherMap API key and internet connection
+- For missing outdoor temperature data, verify your ZIP code and internet connection
 - Verify `secrets.yaml` formatting and content
 - Restart Home Assistant after configuration changes
 
