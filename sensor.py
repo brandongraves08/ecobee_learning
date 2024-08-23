@@ -1,5 +1,3 @@
-"""Ecobee Learning Integration for Home Assistant."""
-
 import logging
 from datetime import timedelta, datetime
 import voluptuous as vol
@@ -32,6 +30,7 @@ CONF_CLIMATE_ENTITY = "climate_entity"
 CONF_DB_PATH = "db_path"
 CONF_ENERGY_RATE = "energy_rate"
 CONF_WEATHER_API_KEY = "weather_api_key"
+CONF_ZIP_CODE = "zip_code"
 
 DEFAULT_NAME = "Ecobee AC Runtime"
 DEFAULT_DB_PATH = "ecobee_learning.db"
@@ -43,6 +42,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_DB_PATH, default=DEFAULT_DB_PATH): cv.string,
     vol.Optional(CONF_ENERGY_RATE, default=DEFAULT_ENERGY_RATE): cv.positive_float,
     vol.Optional(CONF_WEATHER_API_KEY): cv.string,
+    vol.Optional(CONF_ZIP_CODE): cv.string,
 })
 
 async def async_setup_platform(
@@ -57,9 +57,9 @@ async def async_setup_platform(
     db_path = config.get(CONF_DB_PATH)
     energy_rate = config.get(CONF_ENERGY_RATE)
     weather_api_key = config.get(CONF_WEATHER_API_KEY)
-    self.city = config.get('weather_city')
+    zip_code = config.get(CONF_ZIP_CODE)
 
-    data = EcobeeLearningData(hass, climate_entity, db_path, energy_rate, weather_api_key)
+    data = EcobeeLearningData(hass, climate_entity, db_path, energy_rate, weather_api_key, zip_code)
     await data.async_update()
 
     sensors = [
@@ -81,13 +81,14 @@ async def async_setup_platform(
 class EcobeeLearningData:
     """Manage Ecobee data and historical storage."""
 
-    def __init__(self, hass, climate_entity, db_path, energy_rate, weather_api_key):
+    def __init__(self, hass, climate_entity, db_path, energy_rate, weather_api_key, zip_code):
         """Initialize the data object."""
         self.hass = hass
         self.climate_entity = climate_entity
         self.db_path = db_path
         self.energy_rate = energy_rate
         self.weather_api_key = weather_api_key
+        self.zip_code = zip_code
         self.conn = sqlite3.connect(db_path)
         self.create_table()
         self.data = {}
@@ -216,109 +217,115 @@ class EcobeeLearningData:
             return None
 
     def estimate_daily_cost(self):
-        """Estimate the daily cost based on runtime and energy rate."""
-        try:
-            cursor = self.conn.cursor()
-            cursor.execute('''
-            SELECT SUM(runtime) FROM runtime_data
-            WHERE timestamp > datetime('now', '-1 day')
-            ''')
-            result = cursor.fetchone()
-            if result and result[0] is not None:
-                # Assuming 3.5 kW power consumption for an average AC unit
-                daily_kwh = (result[0] / 60) * 3.5
-                return round(daily_kwh * self.energy_rate, 2)
-            return None
-        except Exception as e:
-            _LOGGER.error(f"Error estimating daily cost: {e}")
-            return None
+        """Estimate daily energy cost based on runtime and energy rate."""
+        if self.data['average_runtime']:
+            daily_runtime = self.data['average_runtime'] * 24  # Assuming similar runtime over 24 hours
+            return round(daily_runtime * self.energy_rate / 1000, 2)  # kWh cost
+        return None
 
     async def get_outdoor_temperature(self):
-        """Fetch outdoor temperature from a weather API."""
-        if not self.weather_api_key:
-            return None
-        
-        try:
-            # Replace with your preferred weather API
-            url = f"http://api.openweathermap.org/data/2.5/weather?q={self.city}&appid={self.weather_api_key}&units=imperial"
-            response = await self.hass.async_add_executor_job(requests.get, url)
-            data = response.json()
-            return data['main']['temp']
-        except Exception as e:
-            _LOGGER.error(f"Error fetching outdoor temperature: {e}")
-            return None
+        """Get the current outdoor temperature using the provided ZIP code."""
+        if self.weather_api_key and self.zip_code:
+            url = f"http://api.weatherapi.com/v1/current.json?key={self.weather_api_key}&q={self.zip_code}"
+            try:
+                response = requests.get(url)
+                response.raise_for_status()
+                data = response.json()
+                return data['current']['temp_f']
+            except Exception as e:
+                _LOGGER.error(f"Error retrieving outdoor temperature: {e}")
+                return None
+        return None
 
-class EcobeeBaseSensor(SensorEntity):
-    """Base representation of an Ecobee sensor."""
+class EcobeeRuntimeSensor(SensorEntity):
+    """Representation of an Ecobee Runtime Sensor."""
 
-    def __init__(self, name, attribute, data):
+    _attr_unit_of_measurement = UnitOfTime.MINUTES
+
+    def __init__(self, name, data_key, data):
         """Initialize the sensor."""
-        self._name = name
-        self._attribute = attribute
-        self._data = data
-        self._state = None
-        self._attr_unique_id = f"ecobee_learning_{data.climate_entity}_{attribute}"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return self._name
-
-    @property
-    def state(self):
-        """Return the state of the sensor."""
-        return self._state
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
 
     async def async_update(self):
-        """Fetch new state data for the sensor."""
-        await self._data.async_update()
-        self._state = self._data.data.get(self._attribute)
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
 
-class EcobeeRuntimeSensor(EcobeeBaseSensor):
-    """Representation of an Ecobee runtime sensor."""
+class EcobeeTemperatureSensor(SensorEntity):
+    """Representation of an Ecobee Temperature Sensor."""
 
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return UnitOfTime.MINUTES
+    _attr_unit_of_measurement = UnitOfTemperature.FAHRENHEIT
 
-class EcobeeTemperatureSensor(EcobeeBaseSensor):
-    """Representation of an Ecobee temperature sensor."""
+    def __init__(self, name, data_key, data):
+        """Initialize the sensor."""
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
 
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return UnitOfTemperature.FAHRENHEIT
+    async def async_update(self):
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
 
-class EcobeeStateSensor(EcobeeBaseSensor):
-    """Representation of an Ecobee state sensor."""
+class EcobeeStateSensor(SensorEntity):
+    """Representation of an Ecobee State Sensor."""
 
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return None
+    def __init__(self, name, data_key, data):
+        """Initialize the sensor."""
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
 
-class EcobeeBooleanSensor(EcobeeBaseSensor):
-    """Representation of an Ecobee boolean sensor."""
+    async def async_update(self):
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
 
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return None
+class EcobeeBooleanSensor(SensorEntity):
+    """Representation of an Ecobee Boolean Sensor."""
 
-class EcobeeEfficiencySensor(EcobeeBaseSensor):
-    """Representation of an Ecobee efficiency sensor."""
+    def __init__(self, name, data_key, data):
+        """Initialize the sensor."""
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
 
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return PERCENTAGE
+    async def async_update(self):
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
+        self._attr_icon = "mdi:alert" if self._attr_state else "mdi:check"
 
-class EcobeeCostSensor(EcobeeBaseSensor):
-    """Representation of an Ecobee cost sensor."""
+class EcobeeEfficiencySensor(SensorEntity):
+    """Representation of an Ecobee Efficiency Sensor."""
 
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement."""
-        return "$"
+    _attr_unit_of_measurement = PERCENTAGE
+
+    def __init__(self, name, data_key, data):
+        """Initialize the sensor."""
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
+
+    async def async_update(self):
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
+
+class EcobeeCostSensor(SensorEntity):
+    """Representation of an Ecobee Cost Sensor."""
+
+    _attr_unit_of_measurement = "$"
+
+    def __init__(self, name, data_key, data):
+        """Initialize the sensor."""
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
+
+    async def async_update(self):
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
