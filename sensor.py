@@ -1,26 +1,11 @@
 import logging
-from datetime import timedelta, datetime
-import voluptuous as vol
-import sqlite3
-import statistics
 import requests
-
-from homeassistant.components.sensor import (
-    SensorEntity,
-    PLATFORM_SCHEMA
-)
-from homeassistant.const import (
-    CONF_NAME,
-    UnitOfTemperature,
-    UnitOfTime,
-    PERCENTAGE,
-)
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
-from homeassistant.helpers.event import async_track_state_change
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import EntityCategory
+import sqlalchemy
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.const import TEMP_CELSIUS
+from homeassistant.helpers.entity import Entity
+import homeassistant.util.dt as dt_util
+from datetime import datetime, timedelta
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -196,24 +181,6 @@ class EcobeeLearningData:
             return round(result[0], 2) if result and result[0] is not None else None
         except Exception as e:
             _LOGGER.error(f"Error retrieving average temperature change rate: {e}")
-            return None
-
-    def calculate_efficiency_score(self):
-        """Calculate an energy efficiency score based on runtime and temperature change."""
-        try:
-            cursor = self.conn.cursor()
-            cursor.execute('''
-            SELECT AVG(runtime / temp_change) FROM runtime_data
-            WHERE timestamp > datetime('now', '-7 days')
-            ''')
-            result = cursor.fetchone()
-            if result and result[0] is not None:
-                # Lower values are better (less runtime per degree change)
-                # Inverting and scaling to 0-100 range
-                return round(100 / (1 + result[0]), 2)
-            return None
-        except Exception as e:
-            _LOGGER.error(f"Error calculating efficiency score: {e}")
             return None
 
     def estimate_daily_cost(self):
