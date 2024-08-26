@@ -99,3 +99,96 @@ class EcobeeLearningSensor(SensorEntity):
         except Exception as e:
             _LOGGER.error(f"Error fetching outdoor temperature: {e}")
             return None
+
+class EcobeeRuntimeSensor(SensorEntity):
+    """Representation of an Ecobee Runtime Sensor."""
+
+    _attr_unit_of_measurement = UnitOfTime.MINUTES
+
+    def __init__(self, name, data_key, data):
+        """Initialize the sensor."""
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
+
+    async def async_update(self):
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
+
+class EcobeeTemperatureSensor(SensorEntity):
+    """Representation of an Ecobee Temperature Sensor."""
+
+    _attr_unit_of_measurement = UnitOfTemperature.FAHRENHEIT
+
+    def __init__(self, name, data_key, data):
+        """Initialize the sensor."""
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
+
+    async def async_update(self):
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
+
+class EcobeeStateSensor(SensorEntity):
+    """Representation of an Ecobee State Sensor."""
+
+    def __init__(self, name, data_key, data):
+        """Initialize the sensor."""
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
+
+    async def async_update(self):
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
+
+class EcobeeBooleanSensor(SensorEntity):
+    """Representation of an Ecobee Boolean Sensor."""
+
+    def __init__(self, name, data_key, data):
+        """Initialize the sensor."""
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
+
+    async def async_update(self):
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
+        self._attr_icon = "mdi:alert" if self._attr_state else "mdi:check"
+
+class EcobeeEfficiencySensor(SensorEntity):
+    """Representation of an Ecobee Efficiency Sensor."""
+
+    _attr_unit_of_measurement = PERCENTAGE
+
+    def __init__(self, name, data_key, data):
+        """Initialize the sensor."""
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
+
+    async def async_update(self):
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
+
+class EcobeeCostSensor(SensorEntity):
+    """Representation of an Ecobee Cost Sensor."""
+
+    _attr_unit_of_measurement = "$"
+
+    def __init__(self, name, data_key, data):
+        """Initialize the sensor."""
+        self._attr_name = name
+        self.data_key = data_key
+        self.data = data
+
+    async def async_update(self):
+        """Update the sensor."""
+        await self.data.async_update()
+        self._attr_state = self.data.data.get(self.data_key)
