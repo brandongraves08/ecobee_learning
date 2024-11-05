@@ -38,9 +38,10 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_CLIMATE_ENTITY): cv.entity_id,
     vol.Optional(CONF_DB_PATH, default=DEFAULT_DB_PATH): cv.string,
     vol.Optional(CONF_ENERGY_RATE, default=DEFAULT_ENERGY_RATE): cv.positive_float,
-    vol.Optional(CONF_WEATHER_API_KEY): cv.string,
-    vol.Optional(CONF_ZIP_CODE): cv.string,
+    vol.Required(CONF_WEATHER_API_KEY): cv.string,
+    vol.Required(CONF_ZIP_CODE): cv.string,
 })
+
 
 async def async_setup_platform(
     hass: HomeAssistant,
@@ -83,15 +84,16 @@ class EcobeeLearningData:
         """Initialize the data object."""
         self.hass = hass
         self.climate_entity = climate_entity
-        self.db_path = db_path
-        self.energy_rate = energy_rate
+        self.db_path = db_path or DEFAULT_DB_PATH
+        self.energy_rate = energy_rate or DEFAULT_ENERGY_RATE
         self.weather_api_key = weather_api_key
         self.zip_code = zip_code
-        self.conn = sqlite3.connect(db_path)
+        self.conn = sqlite3.connect(self.db_path)
         self.create_table()
         self.data = {}
         self.cooling_start_time = None
         self.cooling_start_temp = None
+
 
     def create_table(self):
         """Create the database tables if they don't exist."""
@@ -356,6 +358,8 @@ class EcobeeCostSensor(SensorEntity):
         """Update the sensor."""
         await self.data.async_update()
         self._attr_state = self.data.data.get(self.data_key)
+
+
 
 
 
