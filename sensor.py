@@ -51,12 +51,13 @@ async def async_setup_platform(
 ) -> None:
 
     """Set up the Ecobee Learning sensors."""
-    name = config.get(CONF_NAME)
-    climate_entity = config.get(CONF_CLIMATE_ENTITY)
+    name = config[CONF_NAME]  # Using dict access instead of .get() for required fields
+    climate_entity = config[CONF_CLIMATE_ENTITY]
     db_path = config.get(CONF_DB_PATH)
     energy_rate = config.get(CONF_ENERGY_RATE)
-    weather_api_key = config.get(CONF_WEATHER_API_KEY)
-    zip_code = config.get(CONF_ZIP_CODE)
+    weather_api_key = config[CONF_WEATHER_API_KEY]
+    zip_code = config[CONF_ZIP_CODE]
+
 
     data = EcobeeLearningData(hass, climate_entity, db_path, energy_rate, weather_api_key, zip_code)
     await data.async_update()
@@ -358,6 +359,7 @@ class EcobeeCostSensor(SensorEntity):
         """Update the sensor."""
         await self.data.async_update()
         self._attr_state = self.data.data.get(self.data_key)
+
 
 
 
