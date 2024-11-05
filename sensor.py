@@ -1,21 +1,33 @@
 import logging
-import requests
-import sqlalchemy
-from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import TEMP_CELSIUS
+import sqlite3
+import aiohttp
+from homeassistant.components.sensor import SensorEntity, PLATFORM_SCHEMA
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfTime,
+    UnitOfTemperature,
+)
+
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+import homeassistant.helpers.config_validation as cv
+import voluptuous as vol
 import homeassistant.util.dt as dt_util
 from datetime import datetime, timedelta
 
-_LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "ecobee_learning"
 
+CONF_NAME = "name"
 CONF_CLIMATE_ENTITY = "climate_entity"
 CONF_DB_PATH = "db_path"
 CONF_ENERGY_RATE = "energy_rate"
 CONF_WEATHER_API_KEY = "weather_api_key"
 CONF_ZIP_CODE = "zip_code"
+
+_LOGGER = logging.getLogger(__name__)
 
 DEFAULT_NAME = "Ecobee AC Runtime"
 DEFAULT_DB_PATH = "ecobee_learning.db"
@@ -36,6 +48,7 @@ async def async_setup_platform(
     async_add_entities: AddEntitiesCallback,
     discovery_info: DiscoveryInfoType | None = None
 ) -> None:
+
     """Set up the Ecobee Learning sensors."""
     name = config.get(CONF_NAME)
     climate_entity = config.get(CONF_CLIMATE_ENTITY)
@@ -120,13 +133,14 @@ class EcobeeLearningData:
             else:
                 self.data['current_runtime'] = 0
 
-            # Update other calculated fields
+            # Update calculated fields
             self.data['average_runtime'] = self.get_average_runtime()
             self.data['alert'] = self.check_for_alert()
             self.data['avg_time_per_degree'] = self.get_avg_temp_change_rate()
             self.data['efficiency_score'] = self.calculate_efficiency_score()
             self.data['estimated_daily_cost'] = self.estimate_daily_cost()
             self.data['outdoor_temp'] = await self.get_outdoor_temperature()
+
 
     def store_data(self, runtime, temp_change, current_temp, outdoor_temp):
         """Store the runtime data in the database."""
@@ -183,7 +197,51 @@ class EcobeeLearningData:
             _LOGGER.error(f"Error retrieving average temperature change rate: {e}")
             return None
 
+    def calculate_efficiency_score(self):
+        """Calculate efficiency score based on runtime and temperature change rate."""
+        try:
+            # Get average runtime and temp change rate for the last week
+            cursor = self.conn.cursor()
+            cursor.execute('''
+            SELECT AVG(runtime/temp_change) as efficiency
+            FROM runtime_data 
+            WHERE timestamp > datetime('now', '-7 days')
+            AND temp_change != 0
+            ''')
+            result = cursor.fetchone()
+            
+            if result[0] is None:
+                return None
+                
+            # Lower minutes per degree is more efficient
+            base_score = 100
+            efficiency = result[0]  # minutes per degree
+            
+            # Adjust score based on outdoor temperature impact
+            if self.data.get('outdoor_temp'):
+                outdoor_temp = self.data['outdoor_temp']
+                # Harder to cool when it's hotter outside, so adjust score up
+                if outdoor_temp > 85:
+                    base_score += 10
+                elif outdoor_temp > 95:
+                    base_score += 20
+            
+            # Penalize score based on efficiency (higher minutes per degree)
+            if efficiency > 30:  # Takes more than 30 mins per degree
+                base_score -= 30
+            elif efficiency > 20:
+                base_score -= 20
+            elif efficiency > 10:
+                base_score -= 10
+                
+            return max(0, min(100, base_score))  # Keep score between 0-100
+            
+        except Exception as e:
+            _LOGGER.error(f"Error calculating efficiency score: {e}")
+            return None
+
     def estimate_daily_cost(self):
+
         """Estimate daily energy cost based on runtime and energy rate."""
         if self.data['average_runtime']:
             daily_runtime = self.data['average_runtime'] * 24  # Assuming similar runtime over 24 hours
@@ -195,12 +253,14 @@ class EcobeeLearningData:
         if self.weather_api_key and self.zip_code:
             url = f"http://api.weatherapi.com/v1/current.json?key={self.weather_api_key}&q={self.zip_code}"
             try:
-                response = requests.get(url)
-                response.raise_for_status()
-                data = response.json()
-                return data['current']['temp_f']
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as response:
+                        response.raise_for_status()
+                        data = await response.json()
+                        return data['current']['temp_f']
             except Exception as e:
                 _LOGGER.error(f"Error retrieving outdoor temperature: {e}")
+
                 return None
         return None
 
@@ -296,3 +356,16 @@ class EcobeeCostSensor(SensorEntity):
         """Update the sensor."""
         await self.data.async_update()
         self._attr_state = self.data.data.get(self.data_key)
+
+
+
+
+
+
+
+
+
+
+
+
+
