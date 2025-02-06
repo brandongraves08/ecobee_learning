@@ -1,0 +1,157 @@
+title: Ecobee Learning Dashboard
+views:
+  - title: Ecobee Overview
+    path: ecobee
+    badges: []
+    cards:
+      # Current Status Card
+      - type: vertical-stack
+        cards:
+          - type: thermostat
+            entity: climate.ecobee_downstairs
+          - type: entities
+            title: Current Status
+            entities:
+              - entity: sensor.ecobee_downstairs_current_runtime
+                name: Current Runtime
+                icon: mdi:timer-outline
+              - entity: sensor.ecobee_downstairs_hvac_action
+                name: HVAC Status
+                icon: mdi:hvac
+              - entity: sensor.ecobee_downstairs_equipment_running
+                name: Equipment
+                icon: mdi:fan
+              - entity: sensor.ecobee_downstairs_outdoor_temperature
+                name: Outdoor Temperature
+                icon: mdi:thermometer
+
+      # Performance Metrics Card
+      - type: vertical-stack
+        cards:
+          - type: custom:mini-graph-card
+            name: Temperature History
+            entities:
+              - entity: sensor.ecobee_downstairs_current_temperature
+                name: Current
+              - entity: sensor.ecobee_downstairs_target_temperature
+                name: Target
+              - entity: sensor.ecobee_downstairs_outdoor_temperature
+                name: Outdoor
+            hours_to_show: 24
+            points_per_hour: 4
+            line_width: 2
+            smoothing: true
+            show:
+              labels: true
+              points: false
+              legend: true
+          - type: custom:mini-graph-card
+            name: Runtime History
+            entities:
+              - entity: sensor.ecobee_downstairs_current_runtime
+                name: Runtime
+            hours_to_show: 24
+            points_per_hour: 4
+            line_width: 2
+            smoothing: true
+            show:
+              labels: true
+              points: true
+
+      # Efficiency Metrics Card
+      - type: vertical-stack
+        cards:
+          - type: gauge
+            name: Energy Efficiency Score
+            entity: sensor.ecobee_downstairs_energy_efficiency_score
+            min: 0
+            max: 100
+            severity:
+              green: 80
+              yellow: 60
+              red: 0
+          - type: custom:mini-graph-card
+            name: Efficiency Trend
+            entities:
+              - entity: sensor.ecobee_downstairs_energy_efficiency_score
+            hours_to_show: 168  # 1 week
+            points_per_hour: 1
+            line_width: 2
+            show:
+              labels: true
+              points: false
+              legend: true
+
+      # Cost Analysis Card
+      - type: vertical-stack
+        cards:
+          - type: custom:mini-graph-card
+            name: Daily Cost Estimate
+            entities:
+              - entity: sensor.ecobee_downstairs_estimated_daily_cost
+            hours_to_show: 168  # 1 week
+            points_per_hour: 1
+            line_width: 2
+            show:
+              labels: true
+              points: true
+              legend: true
+          - type: statistics-graph
+            title: Cost Statistics
+            entities:
+              - sensor.ecobee_downstairs_estimated_daily_cost
+            period:
+              calendar:
+                period: month
+            stat_types:
+              - mean
+              - min
+              - max
+
+      # Alert Card (Conditional)
+      - type: conditional
+        conditions:
+          - entity: sensor.ecobee_downstairs_alert
+            state: "True"
+        card:
+          type: markdown
+          title: ⚠️ System Alert
+          content: >
+            The current runtime is significantly higher than average.
+            This might indicate:
+            * Reduced system efficiency
+            * Unusual temperature demands
+            * Potential maintenance needs
+
+      # Performance Details Card
+      - type: entities
+        title: System Performance
+        entities:
+          - entity: sensor.ecobee_downstairs_avg_time_per_degree
+            name: Minutes per Degree
+            icon: mdi:thermometer-lines
+          - entity: sensor.ecobee_downstairs_average_runtime
+            name: Average Runtime
+            icon: mdi:clock-outline
+          - type: divider
+          - entity: sensor.ecobee_downstairs_estimated_daily_cost
+            name: Estimated Daily Cost
+            icon: mdi:currency-usd
+          - entity: sensor.ecobee_downstairs_energy_efficiency_score
+            name: Efficiency Score
+            icon: mdi:leaf
+
+      # Info Card
+      - type: markdown
+        title: About This Dashboard
+        content: >
+          This dashboard provides detailed insights into your HVAC system's performance.
+          The efficiency score is calculated based on runtime and temperature changes,
+          while cost estimates use your configured energy rate.
+          
+          **Alert Status**: Warnings appear when runtime exceeds 1.5x average
+          
+          **Efficiency Score**:
+          * 80-100: Excellent
+          * 60-79: Good
+          * Below 60: Needs attention

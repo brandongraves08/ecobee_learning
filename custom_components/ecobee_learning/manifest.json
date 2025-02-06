@@ -1,0 +1,17 @@
+{
+  "domain": "ecobee_learning",
+  "name": "Ecobee Learning",
+  "version": "1.0.0",
+  "documentation": "https://github.com/brandongraves08/ecobee_learning",
+  "issue_tracker": "https://github.com/brandongraves08/ecobee_learning/issues",
+  "dependencies": ["ecobee"],
+  "codeowners": ["@brandongraves08"],
+  "requirements": [
+    "aiohttp>=3.8.0",
+    "aiosqlite>=0.17.0"
+  ],
+  "iot_class": "local_polling",
+  "integration_type": "device",
+  "config_flow": false,
+  "quality_scale": "silver"
+}
